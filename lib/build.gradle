@@ -1,0 +1,82 @@
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'maven-publish'
+}
+
+group = 'com.rksdev'
+version = '1.0.0'
+
+// Apply a specific Java toolchain to ease working on different environments.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    // Use Maven Central for resolving dependencies.
+    mavenCentral()
+}
+
+ext {
+    lombokVersion = '1.18.38'
+}
+
+dependencies {
+
+    api 'org.springframework.boot:spring-boot-starter-security:3.5.9'
+    implementation 'org.springframework.boot:spring-boot-autoconfigure:3.5.9'
+    api 'org.springframework.boot:spring-boot-starter-oauth2-resource-server:3.5.9'
+    implementation 'org.springframework.boot:spring-boot-starter-validation:3.5.9'
+
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.5'
+
+    // Allows you to use Servlet classes (HttpServletRequest, etc.)
+    // but doesn't force the dependency onto the consumer
+    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.0.0'
+
+    // You'll also need Spring Web for the filter classes
+    compileOnly 'org.springframework:spring-web'
+
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+
+    // Use JUnit test framework.
+    testImplementation libs.junit
+
+    // This dependency is exported to consumers, that is to say found on their compile classpath.
+    api libs.commons.math3
+
+    // This dependency is used internally, and not exposed to consumers on their own compile classpath.
+    implementation libs.guava
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+
+            from components.java
+
+            groupId = 'com.rksdev'
+
+            artifactId = 'jwt-security'
+
+            version = '1.0.0'
+
+        }
+    }
+//    repositories {
+//        maven {
+//            name = "GitHubPackages"
+//            url = uri("https://maven.pkg.github.com/the-best-dukkan/common-security")
+//            credentials {
+//                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user")
+//                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key")
+//            }
+//        }
+//    }
+}
+

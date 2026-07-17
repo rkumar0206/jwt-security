@@ -5,9 +5,10 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.http.HttpHeaders;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,23 +31,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        final String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+        // 1. Extract the token from HttpOnly cookies instead of the headers
+        final String jwt = extractTokenFromCookie(request);
 
-        // Scenario 1: No Token - Pass along to next filter and exit immediately
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        // Scenario 1: No Token - Pass along to the next filter in the chain and exit immediately
+        if (jwt == null || jwt.isBlank()) {
             filterChain.doFilter(request, response);
             return;
         }
-
-        final String jwt = authHeader.substring(7);
 
         try {
             final Claims claims = jwtService.extractAllClaims(jwt);
 
             if (claims != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 if (!jwtService.isTokenExpired(claims)) {
-                    // Extracted string is now explicitly our numerical subject ("4821")
                     String userIdStr = jwtService.extractSubject(claims);
+
+                    Boolean isEnabled = claims.get("isEnabled", Boolean.class);
+
+                    if (isEnabled != null && !isEnabled) {
+                        throw new DisabledException("User is disabled");
+                    }
+
                     Collection<? extends GrantedAuthority> authorities = jwtService.extractAuthorities(claims);
 
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
@@ -79,5 +85,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // Explicitly return to ensure no other code or filter logic runs on this thread
             return;
         }
+    }
+
+    /**
+     * Helper method to iterate through the request's cookies and locate the access token.
+     */
+    private String extractTokenFromCookie(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if ("access_token".equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        return null;
     }
 }

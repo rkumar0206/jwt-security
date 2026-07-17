@@ -8,13 +8,18 @@ import com.rksdev.security.dto.*;
 import com.rksdev.security.service.JwtService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -29,7 +34,6 @@ public class PluggableAuthController {
     private final JwtProperties jwtProperties;
     private final AuthenticationManager authenticationManager;
 
-    // Optional SPI implementations provided selectively by host applications
     private final PluggableUserRegistrationHandler registrationHandler;
     private final PluggableRefreshTokenHandler refreshTokenHandler;
     private final PluggablePasswordResetHandler passwordResetHandler;
@@ -72,7 +76,7 @@ public class PluggableAuthController {
     }
 
     /* ==========================================
-     * 2. USER LOGIN FLOW (Access + Refresh)
+     * 2. USER LOGIN FLOW (HttpOnly Cookies Setup)
      * ========================================== */
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
@@ -82,39 +86,107 @@ public class PluggableAuthController {
 
         String accessToken = jwtService.generateAccessToken(authentication);
 
-        // If the host app handles refresh token storage, issue one alongside the access token
+        MultiValueMap<String, String> headers = new LinkedMultiValueMap<>();
+
+        ResponseCookie accessCookie = ResponseCookie.from("access_token", accessToken)
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(jwtProperties.accessTokenExpirationMillis() / 1000)
+                .build();
+        headers.add(HttpHeaders.SET_COOKIE, accessCookie.toString());
+
         if (refreshTokenHandler != null) {
             String refreshToken = UUID.randomUUID().toString();
             Instant expiry = Instant.now().plusMillis(jwtProperties.refreshTokenExpirationMillis());
             refreshTokenHandler.saveRefreshToken(authentication.getName(), refreshToken, expiry);
 
-            return ResponseEntity.ok(new LoginResponse(accessToken, refreshToken, authentication.getName()));
+            ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", refreshToken)
+                    .httpOnly(true)
+                    .secure(false)
+                    .sameSite("Lax")
+                    .path("/")
+                    .maxAge(jwtProperties.refreshTokenExpirationMillis() / 1000)
+                    .build();
+            headers.add(HttpHeaders.SET_COOKIE, refreshCookie.toString());
         }
 
-        // Fallback for stateless services that only use access tokens
-        return ResponseEntity.ok(new LoginResponse(accessToken, null, authentication.getName()));
+        return new ResponseEntity<>(
+                Map.of("username", authentication.getName(), "message", "Login secure and complete."),
+                headers,
+                HttpStatus.OK
+        );
     }
 
     /* ==========================================
-     * 3. TOKEN REFRESH ROTATION FLOW
+     * 3. TOKEN REFRESH ROTATION FLOW (Reads from Cookie)
      * ========================================== */
     @PostMapping("/refresh")
-    public ResponseEntity<?> refresh(@Valid @RequestBody TokenRefreshRequest request) {
+    public ResponseEntity<?> refresh(@CookieValue(name = "refresh_token", required = false) String refreshToken) {
         if (refreshTokenHandler == null || userDetailsService == null) {
             return buildFeatureNotImplementedResponse("Token Refresh Rotation");
         }
 
-        return refreshTokenHandler.getUsernameIfValid(request.refreshToken())
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Missing required refresh validation token context."));
+        }
+
+        return refreshTokenHandler.getUsernameIfValid(refreshToken)
                 .map(username -> {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+                    if (!userDetails.isEnabled()) {
+                        throw new DisabledException("User is disabled");
+                    }
+
                     String newAccessToken = jwtService.generateAccessToken(userDetails);
-                    return ResponseEntity.ok(Map.of(
-                            "accessToken", newAccessToken,
-                            "refreshToken", request.refreshToken()
-                    ));
+
+                    // Drop an updated short-lived access cookie back into the cluster browser
+                    ResponseCookie updatedAccessCookie = ResponseCookie.from("access_token", newAccessToken)
+                            .httpOnly(true)
+                            .secure(jwtProperties.secureCookies())
+                            .sameSite("Lax")
+                            .path("/")
+                            .maxAge(3600)
+                            .build();
+
+                    return ResponseEntity.ok()
+                            .header(HttpHeaders.SET_COOKIE, updatedAccessCookie.toString())
+                            .body(Map.of("message", "Session continuity verification verified."));
                 })
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("error", "Refresh token is invalid or expired.")));
+    }
+
+    /* ==========================================
+     * 6. SECURE LOGOUT FLOW (Clear Client Cookies)
+     * ========================================== */
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout() {
+        MultiValueMap<String, String> headers = new LinkedMultiValueMap<>();
+
+        ResponseCookie deleteAccessCookie = ResponseCookie.from("access_token", "")
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(0)
+                .build();
+
+        ResponseCookie deleteRefreshCookie = ResponseCookie.from("refresh_token", "")
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(0)
+                .build();
+
+        headers.add(HttpHeaders.SET_COOKIE, deleteAccessCookie.toString());
+        headers.add(HttpHeaders.SET_COOKIE, deleteRefreshCookie.toString());
+
+        return new ResponseEntity<>(Map.of("message", "Logged out cleanly."), headers, HttpStatus.OK);
     }
 
     /* ==========================================
@@ -153,9 +225,6 @@ public class PluggableAuthController {
         return ResponseEntity.ok(Map.of("message", "Password structural updates complete. You may now log in."));
     }
 
-    /* ==========================================
-     * HELPER: REUSABLE DEGRADATION RESPONSE
-     * ========================================== */
     private ResponseEntity<Map<String, String>> buildFeatureNotImplementedResponse(String featureName) {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(Map.of(
                 "error", "Feature Not Implemented",

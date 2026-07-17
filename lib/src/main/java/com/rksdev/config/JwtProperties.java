@@ -12,6 +12,7 @@ public record JwtProperties(
         String issuer,
         long accessTokenExpirationMillis,  // e.g., 900000 (15 mins)
         long refreshTokenExpirationMillis, // e.g., 604800000 (7 days)
+        boolean secureCookies,
         List<String> publicEndpoints,
         List<RoleMapping> roleMappings
 ) {

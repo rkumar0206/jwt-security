@@ -51,6 +51,7 @@ public class JwtService {
         String subjectId = resolveSubjectId(userDetails, userDetails.getUsername());
 
         claims.put("username", userDetails.getUsername());
+        claims.putIfAbsent("isEnabled", userDetails.isEnabled());
 
         return buildToken(subjectId, userDetails.getAuthorities(), jwtProperties.accessTokenExpirationMillis(), claims);
     }

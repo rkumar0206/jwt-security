@@ -4,6 +4,7 @@ import com.rksdev.config.JwtProperties;
 import com.rksdev.security.api.JwtCustomClaimsProvider;
 import com.rksdev.security.filter.JwtAuthenticationFilter;
 import com.rksdev.security.service.JwtService;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -53,6 +54,25 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // 🎯 FORCE 401 FOR UNAUTHENTICATED / EXPIRED COOKIE REQUESTS
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json");
+                            response.setCharacterEncoding("UTF-8");
+
+                            String jsonErrorResponse = """
+                                    {
+                                        "status": 401,
+                                        "error": "Unauthorized",
+                                        "message": "Full authentication is required to access this resource."
+                                    }
+                                    """;
+
+                            response.getWriter().write(jsonErrorResponse);
+                            response.getWriter().flush();
+                        })
+                )
                 .authorizeHttpRequests(auth -> {
 
                     // 1. Map open public pathways

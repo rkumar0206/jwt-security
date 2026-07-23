@@ -8,8 +8,10 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -26,15 +28,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.jwtService = jwtService;
     }
 
+    /**
+     * Define paths that should skip this filter entirely (e.g., Auth Endpoints).
+     */
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return path.startsWith("/api/v1/auth") || path.startsWith("/auth");
+    }
 
-        // 1. Extract the token from HttpOnly cookies instead of the headers
+    @Override
+    protected void doFilterInternal(
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull FilterChain filterChain
+    ) throws ServletException, IOException {
+
         final String jwt = extractTokenFromCookie(request);
 
-        // Scenario 1: No Token - Pass along to the next filter in the chain and exit immediately
+        // Scenario 1: No Token present
+        // Do NOT return 401 manually here. Simply proceed down the filter chain without
+        // setting the SecurityContext. Spring Security's SecurityFilterChain will check
+        // if the request path is permitAll() or requires authentication.
         if (jwt == null || jwt.isBlank()) {
             filterChain.doFilter(request, response);
             return;
@@ -45,14 +60,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (claims != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 if (!jwtService.isTokenExpired(claims)) {
-                    String userIdStr = jwtService.extractSubject(claims);
 
                     Boolean isEnabled = claims.get("isEnabled", Boolean.class);
-
-                    if (isEnabled != null && !isEnabled) {
-                        throw new DisabledException("User is disabled");
+                    if (Boolean.FALSE.equals(isEnabled)) {
+                        throw new DisabledException("User account is disabled");
                     }
 
+                    String userIdStr = jwtService.extractSubject(claims);
                     Collection<? extends GrantedAuthority> authorities = jwtService.extractAuthorities(claims);
 
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
@@ -63,32 +77,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-
-            // Scenario 2: Token is completely valid - Pass down the chain to controllers
-            filterChain.doFilter(request, response);
-
-        } catch (JwtException e) {
-
-            // Scenario 3: Token validation failed - Short-circuit right here!
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.setCharacterEncoding("UTF-8");
-
-            String jsonErrorResponse = String.format(
-                    "{\"status\": 401, \"error\": \"Unauthorized\", \"message\": \"%s\"}",
-                    e.getMessage() != null ? e.getMessage().replace("\"", "\\\"") : "Token validation failed"
-            );
-
-            response.getWriter().write(jsonErrorResponse);
-            response.getWriter().flush();
-
-            // Explicitly return to ensure no other code or filter logic runs on this thread
-            return;
+        } catch (JwtException | AuthenticationException e) {
+            // Guarantee thread safety by clearing context on invalid token or disabled account
+            SecurityContextHolder.clearContext();
         }
+
+        // Pass control to the next filter in the chain
+        filterChain.doFilter(request, response);
     }
 
     /**
-     * Helper method to iterate through the request's cookies and locate the access token.
+     * Helper method to extract token from HttpOnly cookies with optional Header fallback.
      */
     private String extractTokenFromCookie(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
@@ -99,6 +98,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         }
+
+        // Fallback to Bearer token header if cookie is missing (useful for Swagger/Postman testing)
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+
         return null;
     }
 }

@@ -149,7 +149,7 @@ public class PluggableAuthController {
                             .secure(jwtProperties.secureCookies())
                             .sameSite("Lax")
                             .path("/")
-                            .maxAge(3600)
+                            .maxAge(jwtProperties.accessTokenExpirationMillis() / 1000)
                             .build();
 
                     return ResponseEntity.ok()

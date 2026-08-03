@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.rksdev'
-version = '1.0.4'
+version = '1.0.5'
 
 // Apply a specific Java toolchain to ease working on different environments.
 java {
@@ -64,7 +64,7 @@ publishing {
 
             artifactId = 'jwt-security'
 
-            version = '1.0.4'
+            version = '1.0.5'
 
         }
     }

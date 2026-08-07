@@ -34,10 +34,10 @@ A robust, enterprise-ready reference implementation of stateless **JSON Web Toke
     |  (Username & Password)      | 2. Authenticate Credentials       |
     |                             |-------------------------------->  |
     |                             | 3. Generate Access + Refresh Token|
-    |  4. Return Token Pair DTO   |<--------------------------------  |
+    |  4. Return Tokens in cookies|<--------------------------------  |
     |<----------------------------|                                   |
     |                                                                 |
-    |  5. Request with Header: "Authorization: Bearer <Access_Token>" |
+    |  5. Request with cookie containing access token				  |
     +---------------------------------------------------------------->|
     |                                                                 | 6. Validate Token
     |                                                                 | 7. Set SecurityContext
@@ -137,11 +137,9 @@ dependencies {
 `POST /api/v1/auth/register`
 ```json
 {
-  "firstname": "Rohit",
-  "lastname": "Kumar",
-  "email": "rohit@example.com",
-  "password": "SecurePassword123!",
-  "role": "USER"
+  "username": "rohit.kumar",
+  "email": "test@gmail.com",
+  "password": "SecretPassword"
 }
 ```
 

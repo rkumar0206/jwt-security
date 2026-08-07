@@ -3,7 +3,6 @@
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Spring Security](https://img.shields.io/badge/Spring%20Security-6.x%2F7.x-blue.svg)](https://spring.io/projects/spring-security)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A robust, enterprise-ready reference implementation of stateless **JSON Web Token (JWT)** authentication and role-based authorization (RBAC) built using **Spring Boot 3+** and **Spring Security 6+/7+**.
 

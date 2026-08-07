@@ -90,7 +90,7 @@ jwt:
 
 ## 🚀 Getting Started
 ### Prerequisites
-- JDK 17 or JDK 21 installed
+- JDK 21 installed
 - Gradle 8.x 
 - PostgreSQL (Optional; H2 database profile available by default for local dev)
 

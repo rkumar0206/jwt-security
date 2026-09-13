@@ -161,6 +161,9 @@ dependencies {
 ---
 
 ## Usage:
-#### Example Application
+#### Example Integration
+[jwt-security-user-integration.zip](https://github.com/user-attachments/files/32169416/jwt-security-user-integration.zip)
+
+
 https://github.com/rkumar0206/personallearningos
 

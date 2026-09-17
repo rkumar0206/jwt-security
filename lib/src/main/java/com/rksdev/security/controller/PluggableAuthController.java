@@ -4,7 +4,10 @@ import com.rksdev.config.JwtProperties;
 import com.rksdev.security.api.PluggablePasswordResetHandler;
 import com.rksdev.security.api.PluggableRefreshTokenHandler;
 import com.rksdev.security.api.PluggableUserRegistrationHandler;
-import com.rksdev.security.dto.*;
+import com.rksdev.security.dto.ForgotPasswordRequest;
+import com.rksdev.security.dto.LoginRequest;
+import com.rksdev.security.dto.ResetPasswordRequest;
+import com.rksdev.security.dto.SignUpRequest;
 import com.rksdev.security.service.JwtService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -112,11 +115,12 @@ public class PluggableAuthController {
             headers.add(HttpHeaders.SET_COOKIE, refreshCookie.toString());
         }
 
-        return new ResponseEntity<>(
-                Map.of("username", authentication.getName(), "message", "Login secure and complete."),
-                headers,
-                HttpStatus.OK
-        );
+        return ResponseEntity.ok()
+                .headers(new HttpHeaders(headers))
+                .body(Map.of(
+                        "username", authentication.getName(),
+                        "message", "Login secure and complete."
+                ));
     }
 
     /* ==========================================
@@ -186,7 +190,7 @@ public class PluggableAuthController {
         headers.add(HttpHeaders.SET_COOKIE, deleteAccessCookie.toString());
         headers.add(HttpHeaders.SET_COOKIE, deleteRefreshCookie.toString());
 
-        return new ResponseEntity<>(Map.of("message", "Logged out cleanly."), headers, HttpStatus.OK);
+        return new ResponseEntity<>(Map.of("message", "Logged out cleanly."), new HttpHeaders(headers), HttpStatus.OK);
     }
 
     /* ==========================================
